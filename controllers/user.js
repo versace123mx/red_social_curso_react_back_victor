@@ -3,6 +3,8 @@ import bcrypt from 'bcryptjs'
 import User from '../models/User.js'
 import generarJWT from '../helper/generarJWT.js'
 import { subirArchivo } from '../helper/subir-archivo.js'
+import Publication from '../models/Publication.js'
+import Follow from '../models/Follow.js'
 
 //Registrar usuario
 const register = async (req, res) => {
@@ -65,21 +67,54 @@ const login = async (req, res) => {
 
 }
 
-//Metodo para obtener un perfil
-const profile = async (req, res) => {
+//Metodo para obtener el perfil del usuario logueado
+const getDataUserlogin = async (req, res) => {
+    //desde aqui tendriamos que mandar el arreglo de aquien seguimos y quien nos sigue para tener un mayor control en otros casos de busquedas en el front
+    try{
+        
+        //verifico si el usuario existe
+        const user = await User.findById(req.usuario.id)
+        if (!user) {
+            return res.status(400).json({ status: "error", msg: "Usuario no encontrado", result: [] })
+        }
+
+        const [follow,followers] = await Promise.all([
+            Follow.find({estado: true, user:req.usuario.id}).select("followed"),
+            Follow.find({estado: true, followed:req.usuario.id}).select("user")
+        ])
+
+        let following = follow.map(follow => follow.followed.toString());//Devuelve arreglo de personas quien sigo para manejar el boton de follow
+        let followe_me = followers.map(follow => follow.user.toString());//Devuelve arreglo de personas que me sigen para manejar el boton de unfollow
+
+
+        return res.status(200).json({ status: "success", msg: "Se obtubo de manera correcta los datos del usuario", result: [user,{following},{followe_me}] })
+
+    } catch (error) {
+        return res.status(400).json({ status: "error", msg: 'Error al obtenr el usuario', result: [error] })
+    }
+
+}
+
+//Metodo para obtener un perfil por id
+const getUserProfileXId = async (req, res) => {
 
     //Recibo los datos del id
     const { id } = req.params
 
     try{
-        
-        //verifico si el usuario existe
-        const user = await User.findById(id)
-        if (!user) {
-            return res.status(400).json({ status: "error", msg: "Usuario no encontrado", result: [] })
-        }
 
-        return res.status(200).json({ status: "success", msg: "Se obtubo de manera correcta los datos del usuario", result: [user] })
+            const [user,follow,followers] = await Promise.all([
+                User.findById(id),
+                Follow.find({estado: true, user:id}).select("followed"),
+                Follow.find({estado: true, followed:id}).select("user")
+            ])
+
+            let following = follow.map(follow => follow.followed.toString());//Devuelve arreglo de personas quien sigo para manejar el boton de follow
+            let followe_me = followers.map(follow => follow.user.toString());//Devuelve arreglo de personas que me sigen para manejar el boton de unfollow
+
+
+            res.status(200).json({ status: "success", msg:"desde usuario x id agregando listado de following y follow",result:[user,{following},{followe_me}]})
+
 
     } catch (error) {
         return res.status(400).json({ status: "error", msg: 'Error al obtenr el usuario', result: [error] })
@@ -99,14 +134,30 @@ const list = async (req, res) => {
     try{
         
         //Para este caso se crean dos promesas para que corra al mismo tiempo y se hace una destructuracion de arreglos
-        const [total, usuarios] = await Promise.all([
-            User.countDocuments({ estado: true }),
-            User.find({ estado: true }).skip((pagina - 1) * limite).limit(limite)
+        const [total, usuarios,following,follow_me] = await Promise.all([
+            User.countDocuments({$and:[{estado: true},{_id: {$ne:req.usuario.id}}]}),
+            User.find({$and:[
+                {estado: true},
+                {_id: {$ne:req.usuario.id}}
+            ]
+            }).skip((pagina - 1) * limite).limit(limite),
+
+            Follow.find({estado: true, user:req.usuario.id}).select("followed"),
+            Follow.find({estado: true, followed:req.usuario.id}).select("user")
         ])
+
+        
+        let siguiendo = following.map(follow => follow.followed.toString());//Devuelve arreglo de personas quien sigo para manejar el boton de follow
+        let quientesigue = follow_me.map(follow => follow.user.toString());//Devuelve arreglo de personas que me sigen para manejar el boton de unfollow
+        
         const totalPaginas = Math.ceil(total / limite)
         res.status(200).json({
             status: "success", msg: "desde el listado",
-            totalRegistros: total, pagina, totalPaginas, numRegistrosMostrarXPagina: limite, result: usuarios
+            totalRegistros: total, pagina:Number(pagina), totalPaginas, 
+            numRegistrosMostrarXPagina: limite,
+            user_following:siguiendo,
+            user_follow_me:quientesigue,
+            result: usuarios
         })
 
     }catch(error){
@@ -176,41 +227,69 @@ const muestraImagenXNombre = async (req, res) => {
     
     const {nombreimagen} = req.params
     try {
-
-        const showImage = await User.find({
-            $and:[
-                {imagen:nombreimagen},{estado:true}
-            ]
-        })
-
-        if(!showImage.length){
-            return res.json({ status: "error", msj: 'Elemento no encontrado', result:[] });
-        }
-        
         //creamos la ruta de la imagen previa
-        const pathImage = `${process.cwd()}/uploads/user/${showImage[0].imagen}`
+        let pathImage = `${process.cwd()}/uploads/user/${nombreimagen}`
 
         //verificamos si existe la imagen
         if (fs.existsSync(pathImage)) {
             return res.sendFile(pathImage)
         }
+        
+        pathImage = `${process.cwd()}/assets/no-image.jpg`
+        return res.sendFile(pathImage)
 
     } catch (error) {
         res.status(400).json({ status: "error", msg: "Error Al obtenr la Imagen.", result:[error] })
     }
 
-    const pathImage = `${process.cwd()}/assets/no-image.jpg`
-    return res.sendFile(pathImage)
+}
+
+//contadores de fllowing, followers y publicaciones del usuario logueado o el id que se le pase
+const showCounters = async (req, res) => {
+
+    let userId = req.usuario.id;//este es el usuario logueado
+
+    if (req.params.id) {
+        userId = req.params.id;
+    }
+
+    //verifico si el usuario existe
+    const user = await User.findById(userId)
+    if (!user) {
+        return res.status(400).json({ status: "error", msg: "Usuario no encontrado", result: [] })
+    }
+
+    try {
+
+        //Para este caso se crean dos promesas para que corra al mismo tiempo y se hace una destructuracion de arreglos
+        const [following,followed,publications] = await Promise.all([
+            Follow.countDocuments({"user":userId,estado:true}),
+            Follow.countDocuments({"followed":userId,estado:true}),
+            Publication.countDocuments({"user":userId,estado:true}),
+        ])
+
+        const totales = {
+            userId,
+            following,
+            followed,
+            publications
+        }
+        res.status(200).json({ status: "success", msg:"desde el listado x user",result:[totales]})
+    } catch (error) {
+        return res.status(400).json({status:"error",msg:"Eror en la operacion, no se pudo ejecutar",data:[] })
+    }
 
 }
 
 export {
     register,
     login,
-    profile,
+    getDataUserlogin,
+    getUserProfileXId,
     list,
     update,
     updateImage,
     muestraImagenPerfil,
-    muestraImagenXNombre
+    muestraImagenXNombre,
+    showCounters
 }

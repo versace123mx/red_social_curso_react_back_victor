@@ -78,7 +78,6 @@ const following = async (req, res) => {
     }
     const { limite = 5, pagina = 1 } = req.query //Los parametros que bienen en la query
 
-    console.log(iduser)
     if(isNaN(limite) || isNaN(pagina)){
         return res.json({ status: "error", msj: 'Los valores deben de ser numeros' });
     }
@@ -86,7 +85,7 @@ const following = async (req, res) => {
     try {
 
         //Para este caso se crean dos promesas para que corra al mismo tiempo y se hace una destructuracion de arreglos
-        const [total, nameUser, datosUser,following,followers,followsUserLogin,followersUserLogin] = await Promise.all([
+        const [total, nameUser, datosUser,following,followers] = await Promise.all([
             Follow.countDocuments({user:iduser,estado: true}), //cuento cuantos usuarios sigo
             
             //Traigo el nombre del usuario que hace la peticion
@@ -102,16 +101,63 @@ const following = async (req, res) => {
             //a quien sigue y quien lo sigue del usuario que hace la peticion
             Follow.find({estado: true, user:iduser}).select("followed"),
             Follow.find({estado: true, followed:iduser}).select("user"),
-
-
-            //a quien sigue y quien lo sigue del usuario de la session
-            Follow.find({estado: true, user:req.usuario.id}).select("followed"),
-            Follow.find({estado: true, followed:req.usuario.id}).select("user")
         ])
 
-        let siguiendoUserLogin = []
-        let quientesigueUserLogin = []
+        let siguiendo = following.map(follow => follow.followed.toString());//Devuelve arreglo de personas quien sigo para manejar el boton de follow
+        let quientesigue = followers.map(follow => follow.user.toString());//Devuelve arreglo de personas que me sigen para manejar el boton de unfollow
 
+        if(!datosUser.length){
+            return res.status(404).json({status:"success",msg:"No hay registros encontrados",result:[] })
+        }
+        
+        const totalPaginas = Math.ceil(total/limite)
+        res.status(200).json({ status: "success", msg:"desde el listado x user",
+        totalRegistros:total,pagina,totalPaginas,numRegistrosMostrarXPagina:limite,
+        following:siguiendo,
+        followe_me:quientesigue,
+        nameUser,
+        result:datosUser})
+
+    } catch (error) {
+        return res.status(400).json({status:"error",msg:"Eror en la operacion, no se pudo ejecutar",result:[] })
+    }
+}
+
+//Accion listado de usuarios que me siguen
+const followers = async (req, res) => {
+
+    let iduser = req.usuario.id
+    
+    //si llega el id buscamos por usuario id
+    if(req.params.id){
+        iduser = req.params.id
+    }
+    const { limite = 5, pagina = 1 } = req.query //Los parametros que bienen en la query
+
+    if(isNaN(limite) || isNaN(pagina)){
+        return res.json({ status: "error", msj: 'Los valores deben de ser numeros' });
+    }
+
+    try {
+
+        //Para este caso se crean dos promesas para que corra al mismo tiempo y se hace una destructuracion de arreglos
+        const [total, nameUser, datosUser,following,followers] = await Promise.all([
+            Follow.countDocuments({followed:iduser,estado: true}), //cuento cuantos usuarios sigo
+            
+            //Traigo el nombre del usuario que hace la peticion
+            User.find({_id:iduser, estado:true}).select('name surname'),
+            //se llama a los id de los seguidores y se popula para traer sus datos desde user
+            Follow.find({followed:iduser,estado: true}).select('user')
+            .populate({
+                path:'user',
+                select:'-create_at -update_at -email -password -estado -role -__v'
+            })
+            .skip((pagina-1)*limite).limit(limite).sort({create_at:-1}),
+
+            //a quien sigue y quien lo sigue del usuario que hace la peticion
+            Follow.find({estado: true, user:iduser}).select("followed"),
+            Follow.find({estado: true, followed:iduser}).select("user"),
+        ])
 
         let siguiendo = following.map(follow => follow.followed.toString());//Devuelve arreglo de personas quien sigo para manejar el boton de follow
         let quientesigue = followers.map(follow => follow.user.toString());//Devuelve arreglo de personas que me sigen para manejar el boton de unfollow
@@ -119,20 +165,6 @@ const following = async (req, res) => {
         if(!datosUser.length){
             return res.status(404).json({status:"success",msg:"No hay registros encontrados",data:[] })
         }
-
-        //verifico si el que hace la peticion es otro usuario y no el logueado
-        /*
-        if( id != req.usuario.id){
-            siguiendoUserLogin = followsUserLogin.map(follow => follow.followed.toString());//Devuelve arreglo de personas quien sigo para manejar el boton de follow
-            quientesigueUserLogin = followersUserLogin.map(follow => follow.user.toString());//Devuelve arreglo de personas que me sigen para manejar el boton de unfollow
-
-            siguiendo = siguiendoUserLogin.filter(x => siguiendo.includes(x));
-
-            if(!siguiendo.length){
-                siguiendo = quientesigueUserLogin
-            }
-            
-        }*/
         
         const totalPaginas = Math.ceil(total/limite)
         res.status(200).json({ status: "success", msg:"desde el listado x user",
@@ -144,45 +176,6 @@ const following = async (req, res) => {
 
     } catch (error) {
         return res.status(400).json({status:"error",msg:"Eror en la operacion, no se pudo ejecutar",data:[] })
-    }
-}
-
-//Accion listado de usuarios que me siguen
-const followers = async (req, res) => {
-
-    try {
-        
-        const results = await Follow.aggregate([
-            {$match: { followed: new mongoose.Types.ObjectId(req.usuario.id) }},
-            {
-                $lookup: {
-                    from: 'users',
-                    localField: 'user',
-                    foreignField: '_id',
-                    as: 'followedUser'
-                }
-            },
-            { $unwind: '$followedUser' },
-            {
-                $project: {
-                    _id: 0,
-                    followedUser: {
-                        name: '$followedUser.name',
-                        nick: '$followedUser.nick',
-                        email: '$followedUser.email'
-                    }
-                }
-            }
-        ]);
-
-        if(!results.length){
-            return res.status(200).json({status:"success",msg:"follow-me - No hay registros a mostra ", result: [] })
-        }
-        
-        
-        res.status(200).json({status:"success",msg:"usuarios que me siguen ", result: results.map(result => result.followedUser) })
-    } catch (error) {
-        return res.status(400).json({status:"error",msg:"Error al intentar Obtener los follow-me.", result:[error]})
     }
 }
 

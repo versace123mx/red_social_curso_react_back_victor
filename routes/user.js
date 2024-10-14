@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { check } from 'express-validator'
 import { validarCampos, validarArchivoSubir, validarJWT } from '../middleware/index.js'
-import { register, login, profile, list , update, updateImage, muestraImagenPerfil, muestraImagenXNombre } from "../controllers/index.js";
+import { register, login, getDataUserlogin, getUserProfileXId, list , update, updateImage, muestraImagenPerfil, muestraImagenXNombre, showCounters } from "../controllers/index.js";
 const route = Router();
 
 //Rutas publicas
@@ -31,12 +31,15 @@ route.post('/login',[
 
 //Rutas protegidas con el middleware
 
-//obtener un perfil por id
+//obtener perfil del user logueado validando su token
+route.get('/profile-user',validarJWT,getDataUserlogin)
+
+//Ruta para obtener un perfil por id
 route.get('/profile/:id',[
     validarJWT,
     check('id','No es un id de Mongo valido').isMongoId(),
     validarCampos
-],profile)
+],getUserProfileXId)
 
 //listar y paginar registros
 route.get('/list',validarJWT,list)
@@ -59,5 +62,8 @@ route.get('/mostrar-imagen-perfil',validarJWT,muestraImagenPerfil)
 
 //Ruta para mostrar la imagen de perfil por nombre de imagen
 route.get('/mostrar-imagen-nombre/:nombreimagen',muestraImagenXNombre)
+
+//Ruta para mostrar los contadores del usuario logueado o del id que se le pase
+route.get('/show-counters/:id?',validarJWT,showCounters)
 
 export default route

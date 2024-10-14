@@ -117,7 +117,7 @@ const showPublicationsForUser = async (req, res) => {
         const [total, post] = await Promise.all([
             Publication.countDocuments({user:id,estado: true}),
             Publication.find({user:id,estado: true})
-            .skip((pagina-1)*limite).limit(limite).sort({create_at:-1})
+            .skip((pagina-1)*limite).limit(limite)
         ])
 
         if(!post.length){
@@ -126,7 +126,7 @@ const showPublicationsForUser = async (req, res) => {
 
         const totalPaginas = Math.ceil(total/limite)
         res.status(200).json({ status: "success", msg:"desde el listado x user",
-        totalRegistros:total,pagina,totalPaginas,numRegistrosMostrarXPagina:limite,result:post})
+        totalRegistros:total,pagina:Number(pagina),totalPaginas,numRegistrosMostrarXPagina:limite,result:post})
 
     } catch (error) {
         return res.status(400).json({status:"error",msg:"Eror en la operacion, no se pudo ejecutar",result:[error] })
@@ -173,32 +173,20 @@ const showMediaforName = async (req, res) => {
     const {nombreimagen} = req.params
     try {
 
-        const showImage = await Publication.find({
-            $and:[
-                {file:nombreimagen},{estado:true}
-            ]
-        })
-
-        console.log(showImage)
-
-        if(!showImage.length){
-            return res.json({ status: "error", msj: 'Elemento no encontrado', result:[] });
-        }
-        
         //creamos la ruta de la imagen previa
-        const pathImage = `${process.cwd()}/uploads/publication/${showImage[0].file}`
+        let pathImage = `${process.cwd()}/uploads/publication/${nombreimagen}`
 
         //verificamos si existe la imagen
         if (fs.existsSync(pathImage)) {
             return res.sendFile(pathImage)
         }
 
+        pathImage = `${process.cwd()}/assets/no-image.jpg`
+        return res.sendFile(pathImage)
+
     } catch (error) {
         res.status(400).json({ status: "error", msg: "Error Al obtenr la Imagen.", result:[error] })
     }
-
-    const pathImage = `${process.cwd()}/assets/no-image.jpg`
-    return res.sendFile(pathImage)
 }
 
 

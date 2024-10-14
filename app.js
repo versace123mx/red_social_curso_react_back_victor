@@ -41,6 +41,13 @@ app.use(express.urlencoded({extended:true}))//para recibir datos desde un formul
 //Crear Rutas, como todas comienzan con /api ahi mandamos todas en el array
 app.use("/api/red-social",[userRouter,publicationRouter,followRouter])
 
+//endpoint de prueba para asterisk
+app.use("/prueba-asterisk",(req, res) => {
+    const parametros = req.query
+    console.log(parametros)
+
+    res.send('ok')
+})
 // Middleware para manejar rutas no encontradas
 app.use((req, res) => {
     res.status(404).json({

@@ -47,7 +47,6 @@ route.put('/publication/uploadfile/:id',[
 
 //Mostrar Imagen de la publicacion por id de publicacion 
 route.get('/publication/show-image-publication/:nombreimagen',[
-    validarJWT,
     check('nombreimagen','El nombre de la imagen no debe de estar vacio').notEmpty().trim(),
     validarCampos
 ],showMediaforName)
